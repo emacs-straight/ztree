@@ -28,6 +28,7 @@
 ;;; Commentary:
 
 ;;; Code:
+(eval-when-compile (require 'cl))
 (require 'ztree-view)
 (require 'ztree-diff-model)
 
@@ -92,9 +93,19 @@ By default paths starting with dot (like .git) are ignored")
 (defvar-local ztree-diff-show-filtered-files nil
   "Show or not files from the filtered list.")
 
+(defvar-local ztree-diff-show-right-orphan-files t
+  "Show or not orphan files/directories on right side.")
+
+(defvar-local ztree-diff-show-left-orphan-files t
+  "Show or not orphan files/directories on left side.")
+
 (defvar-local ztree-diff-wait-message nil
   "Message showing while constructing the diff tree.")
 
+(defvar ztree-diff-ediff-previous-window-configurations nil
+  "Window configurations prior to calling `ediff'.
+A queue of window configurations, allowing
+to restore last configuration even if there were a couple of ediff sessions")
 
 ;;;###autoload
 (define-minor-mode ztreediff-mode
@@ -224,6 +235,35 @@ Argument NODE node containing paths to files to call a diff on."
       (let ((node (car found)))
         (ztree-diff-simple-diff node)))))
 
+(defun ztree-diff-ediff-before-setup-hook-function ()
+  "Hook function for `ediff-before-setup-hook'.
+
+See the Info node `(ediff) hooks'.
+
+This hook function removes itself."
+  (push (current-window-configuration) ztree-diff-ediff-previous-window-configurations)
+  (ztree-save-current-position)
+  (remove-hook 'ediff-before-setup-hook #'ztree-diff-ediff-before-setup-hook-function))
+
+(defun ztree-diff-ediff-quit-hook-function ()
+  "Hook function for `ediff-quit-hook'.
+
+See the Info node `(ediff) hooks'.
+
+This hook function removes itself."
+  (set-window-configuration (pop ztree-diff-ediff-previous-window-configurations))
+  (ztree-refresh-buffer)
+  (remove-hook 'ediff-quit-hook #'ztree-diff-ediff-quit-hook-function))
+
+(defun ztree-diff-ediff (file-a file-b &optional startup-hooks)
+  "Ediff that cleans up after itself.
+
+Ediff-related buffers are killed and the pre-Ediff window
+configuration is restored."
+  (add-hook 'ediff-before-setup-hook #'ztree-diff-ediff-before-setup-hook-function)
+  (add-hook 'ediff-quit-hook #'ztree-diff-ediff-quit-hook-function t)
+  (ediff file-a file-b startup-hooks))
+
 (defun ztree-diff-node-action (node hard)
   "Perform action on NODE:
 1 if both left and right sides present:
@@ -232,6 +272,9 @@ Argument NODE node containing paths to files to call a diff on."
       1.1.2 simple diff otherwiste
    1.2 if they are the same - view left
 2 if left or right present - view left or rigth"
+  ;; save current position in case if the window
+  ;; configuration will change
+  (ztree-save-current-position)
   (let ((left (ztree-diff-node-left-path node))
         (right (ztree-diff-node-right-path node))
         ;; FIXME: The GNU convention is to only use "path" for lists of
@@ -243,7 +286,7 @@ Argument NODE node containing paths to files to call a diff on."
            (if (eql (ztree-diff-node-different node) 'same)
                (funcall open-f left)
              (if hard
-                 (ediff left right)
+                 (ztree-diff-ediff left right)
                (ztree-diff-simple-diff node))))
           (left (funcall open-f left))
           (right (funcall open-f right))
@@ -473,9 +516,13 @@ unless it is a parent node."
     ;; visible then
     ;; either it is a root. root have no parent
     (or (not (ztree-diff-node-parent node))    ; parent is always visible
-        ;; or the files are different or orphan
-        (or (eql diff 'new)
-            (eql diff 'diff))
+        ;; or the files are different
+        (eql diff 'diff)
+        ;; or it is orphaned, but show orphaned files for now
+        (and (eql diff 'new)
+             (if (ztree-diff-node-left-path node)
+                 ztree-diff-show-left-orphan-files
+               ztree-diff-show-right-orphan-files))
         ;; or it is ignored but we show ignored for now
         (and (eql diff 'ignore)
              ztree-diff-show-filtered-files)
@@ -483,20 +530,30 @@ unless it is a parent node."
         (and (eql diff 'same)
              ztree-diff-show-equal-files))))
 
-(defun ztree-diff-toggle-show-equal-files ()
-  "Toggle visibility of the equal files."
-  (interactive)
-  (setq ztree-diff-show-equal-files (not ztree-diff-show-equal-files))
-  (message (concat (if ztree-diff-show-equal-files "Show" "Hide") " equal files"))
-  (ztree-refresh-buffer))
+(defmacro ztree-diff-define-toggle-show (what)
+  (let ((funcsymbol (intern (concat "ztree-diff-toggle-show-" what "-files")))
+        (variable (intern (concat "ztree-diff-show-" what "-files")))
+        (fundesc (concat "Toggle visibility of the " what " files/directories")))
+    `(defun ,funcsymbol ()
+       ,fundesc
+       (interactive)
+       (setq ,variable (not ,variable))
+       (message (concat (if ,variable "Show " "Hide ") ,what " files"))
+       (ztree-refresh-buffer))))
 
-(defun ztree-diff-toggle-show-filtered-files ()
-  "Toggle visibility of the filtered files."
-  (interactive)
-  (setq ztree-diff-show-filtered-files (not ztree-diff-show-filtered-files))
-  (message (concat (if ztree-diff-show-filtered-files "Show" "Hide") " filtered files"))
-  (ztree-refresh-buffer))
+(ztree-diff-define-toggle-show "equal")
+(ztree-diff-define-toggle-show "filtered")
+(ztree-diff-define-toggle-show "left-orphan")
+(ztree-diff-define-toggle-show "right-orphan")
 
+(defun ztree-diff-toggle-show-orphan-files ()
+  "Toggle visibility of left and right orphan files."
+  (interactive)
+  (let ((show (not ztree-diff-show-left-orphan-files)))
+    (setq ztree-diff-show-left-orphan-files show)
+    (setq ztree-diff-show-right-orphan-files show)
+    (message (concat (if show "Show" "Hide") " orphan files"))
+    (ztree-refresh-buffer)))
 
 (defun ztree-diff-update-wait-message (&optional msg)
   "Update the wait message MSG with one more `.' progress indication."

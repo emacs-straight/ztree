@@ -58,6 +58,18 @@ By default all files starting with dot (like `.gitignore`) are not shown and exc
 
 One also could turn on unicode characters to draw the tree with instead of normal ASCII-characters. This is controlled by the `ztree-draw-unicode-lines` variable.
 
+The variable `ztree-diff-consider-file-permissions` (which is `nil` by default) if set to `t` allows to compare file attributes as well, the files will be considered different if they have different mode.
+
+The special variable `ztree-diff-additional-options`
+introduced to provide an additional arguments
+to the 'diff' tool.
+For example one could specify
+```
+(setq ztree-diff-additional-options '("-w" "-i"))
+```
+to ignore case differences and whitespace differences.
+
+
 ### Screenshots
 
 ![ztreediff emacsx11](https://github.com/fourier/ztree/raw/screenshots/screenshots/emacs_diff_xterm.png "Emacs in xterm with ztree-diff")
@@ -80,6 +92,7 @@ M-x ztree-dir
 * To toggle open/closed state of the subtree of the current directory, hit the `x` key.
 * To visit a file, press `Space` key.
 * To open file in other window, use `RET` key.
+* To open `Dired` with the directory the point is currently on, use the `d` key.
 
 ### Customizations
 Set the `ztree-dir-move-focus` variable to `t` in order to move focus to the other window when the `RET` key is pressed; the default behavior is to keep focus in `ztree-dir` window.

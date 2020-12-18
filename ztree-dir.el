@@ -1,6 +1,6 @@
 ;;; ztree-dir.el --- Text mode directory tree -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2013-2016  Free Software Foundation, Inc.
+;; Copyright (C) 2013-2018  Free Software Foundation, Inc.
 ;;
 ;; Author: Alexey Veretennikov <alexey.veretennikov@gmail.com>
 ;;
@@ -45,7 +45,7 @@
 
 (require 'ztree-util)
 (require 'ztree-view)
-(require 'cl-lib)
+(eval-when-compile (require 'cl-lib))
 
 ;;
 ;; Constants
@@ -97,7 +97,8 @@ One could add own filters in the following way:
   `(
     (,(kbd "H") . ztree-dir-toggle-show-filtered-files)
     (,(kbd ">") . ztree-dir-narrow-to-dir)
-    (,(kbd "<") . ztree-dir-widen-to-parent)))
+    (,(kbd "<") . ztree-dir-widen-to-parent)
+    (,(kbd "d") . ztree-dir-open-dired-at-point)))
 
 
 
@@ -154,6 +155,12 @@ Otherwise, the ztree window is used to find the file."
                 (directory-files path 'full)))
 
 
+(defun ztree-dir-change-directory (node)
+  "Change the start node to NODE and update current directory."
+  (ztree-change-start-node node)
+  (setq default-directory node))
+
+
 (defun ztree-dir-narrow-to-dir ()
   "Interactive command to narrow the current directory buffer.
 The buffer is narrowed to the directory under the cursor.
@@ -163,9 +170,9 @@ If the cursor is on a file, the buffer is narrowed to the parent directory."
          (node (ztree-find-node-in-line line))
          (parent (ztree-get-parent-for-line line)))
     (if (file-directory-p node)
-        (ztree-change-start-node node)
+        (ztree-dir-change-directory node)
       (when parent
-        (ztree-change-start-node (ztree-find-node-in-line parent))))))
+        (ztree-dir-change-directory (ztree-find-node-in-line parent))))))
 
 
 (defun ztree-dir-widen-to-parent ()
@@ -177,8 +184,21 @@ up of the opened."
   (let* ((node ztree-start-node)
          (parent (file-name-directory (directory-file-name node))))
     (when parent
-      (ztree-change-start-node parent))))
+      (ztree-dir-change-directory parent))))
 
+
+(defun ztree-dir-open-dired-at-point ()
+  "If the point is on a directory, open DIRED with this directory.
+Otherwise open DIRED with the parent directory"
+  (interactive)
+  (let* ((line (line-number-at-pos))
+         (node (ztree-find-node-in-line line))
+         (parent (ztree-get-parent-for-line line)))
+    (cond ((and node (file-directory-p node))
+           (dired node))
+          (parent 
+           (dired (ztree-find-node-in-line parent))))))
+  
 
 ;;;###autoload
 (defun ztree-dir (path)
